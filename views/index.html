@@ -1,0 +1,449 @@
+<script   src="https://code.jquery.com/jquery-1.10.0.min.js"   integrity="sha256-2+LznWeWgL7AJ1ciaIG5rFP7GKemzzl+K75tRyTByOE="   crossorigin="anonymous"></script>
+<script src=" http://localhost:3001/socket.io/socket.io.js"></script>
+	<script type="text/javascript">
+	var socketio = io.connect("127.0.0.1:3001");
+	var sel_user="";
+	var dataRepo = [];
+	socketio.on("message_to_client", function(data) { 
+		console.log("message from server",JSON.stringify(data));
+		var torque_max_limit = parseFloat(data.TorqueMaxLimit/100);
+		var torque_min_limit = parseFloat(data.TorqueMinLimit/100);
+		console.log("Minlimit:",data.TorqueMinLimit,parseFloat(data.TorqueMinLimit/100))
+		var torque = parseFloat(data.Torque/100);
+		var torque_status = (data.TorqueStatus==0) ? "Low" : (data.TorqueStatus==1 ? "OK" : "High");
+		document.getElementById("name").value = data.TorqueControllerName;
+		document.getElementById("timestamp").value = data.Timestamp;
+		document.getElementById("torque_ulimit").value = torque_max_limit;
+		document.getElementById("torque_llimit").value = torque_min_limit;
+		document.getElementById("torque_status").value = torque_status;
+		document.getElementById("tightning_id").value = data.TighteningID;
+		document.getElementById("signal").src = ( torque >= torque_min_limit  && torque <= torque_max_limit ) ? "images/trafficlight-green.png" : "images/trafficlight-red.png";
+		document.getElementById("torque").innerHTML = torque;
+		data["Torque"] = torque;
+		data["TorqueStatusText"] = torque_status;
+		dataRepo.push(data);
+		localStorage.setItem("signal_data", JSON.stringify(dataRepo));
+		console.log(dataRepo);
+		dataRepo.sort(function(a, b) {
+    		return parseFloat(a.Timestamp) - parseFloat(b.Timestamp);
+		});
+		drawTable();
+		getExcel()
+	});
+	function sendMessage() {
+  		var data = {"TorqueControllerName": "Smart", "Timestamp": "2017-10-12 10:11:20", "TorqueMaxLimit": 001800, "TorqueMinLimit":"001525", "TorqueStatus": 1, "TighteningID": "ID 201", "Torque": 001559};
+
+  		$.ajax({
+    	url: "http://localhost:3000/smartlabs",
+    	type: "POST",
+    	dataType: 'json',
+   		data:data,
+    	success: function (data, status) {
+       		console.log(data);
+    	},
+    	error: function (xhr, desc, err) {
+       		alert("error");
+    	},
+		});
+	}
+
+	function startTime() 
+	{
+    	var today = new Date();
+    	var h = today.getHours();
+    	var m = today.getMinutes();
+    	var s = today.getSeconds();
+    	m = checkTime(m);
+    	s = checkTime(s);
+    	document.getElementById('time').innerHTML = h + ":" + m + ":" + s;
+    	var t = setTimeout(startTime, 500);
+	}
+
+	function checkTime(i) {
+    	if (i < 10) {i = "0" + i};
+    	return i;
+	}
+
+	function init(){
+		startTime();
+		if(localStorage.getItem("signal_data")){
+		console.log("localstorage", localStorage.getItem("signal_data"))
+		dataRepo = JSON.parse(localStorage.getItem("signal_data"));
+		drawTable();
+		}
+	}
+
+	function drawTable(){
+		if(dataRepo.length){
+			document.getElementsByClassName("toolbar")[0].style.display = "block";
+		}
+		else {
+			document.getElementsByClassName("toolbar")[0].style.display = "none";
+		}
+		var table ="<table><tr><th>Timestamp</th><th>Torque</th><th>Torque Status</th></tr>";
+		console.log("ssss",dataRepo)
+		for(i in dataRepo) {
+			//console.log(i)
+			table += "<tr><td>"+dataRepo[i].Timestamp+"</td><td>"+dataRepo[i].Torque+"</td><td align='center' class="+(dataRepo[i].TorqueStatusText=="OK" ? '' :'cell-red')+">"+dataRepo[i].TorqueStatusText//+"</td></tr>";
+		}
+		table += "</table>";
+		console.log(table)
+		document.getElementById("right-container").innerHTML = table;
+	}
+
+
+
+	function saveAsExcel(context, filename) {
+		console.log(context, filename)
+        excel = createExcelDocument(context);
+        console.log("ex",excel)
+        saveWithFilename(excel, filename);
+    }
+
+    function createExcelDocument(context) {
+        return `<?xml version="1.0"?>`.concat(xmlHeader())
+            .concat(context.sheets
+                //Map over sheets, adding types and content supplied with each one.
+                    .map(sheet => sheet)
+                    .reduce((previous, current) => {
+                        return previous
+                            .concat(xmlWorksheetHeader(current.sheetName, current.columns))
+                            .concat(xmlTypesRow(current.typeDefs))
+                            .concat(xmlContent(current.content, current.typeDefs))
+                            .concat(xmlWorksheetFooter())
+                    }, '')
+            )
+            .concat(xmlFooter())
+    }
+
+    /* Helper method for saving files. */
+
+  	function saveWithFilename(content, filename) {
+        let link = document.createElement('a');
+        if (typeof link.download === 'string') {
+            var blob = new Blob([content], {
+                'type': 'application/octet-stream'
+            });
+            link.href = window.URL.createObjectURL(blob);
+            link.download = filename;
+
+            //Firefox requires the link to be in the body
+            document.body.appendChild(link);
+
+            //simulate click
+            link.click();
+
+            //remove the link when done
+            document.body.removeChild(link);
+        } else {
+            console.error('This browser doesn\'t handle HTML5 download attributes, unable to download Excel.')
+        }
+    }
+    function generateMeta(data){
+    	let meta = [];
+    	for(i in data){
+    		meta.push({"propertyName":i, "displayName":i});
+    	}
+    	return meta;
+    }
+    function getExcel(){
+    	let meta = generateMeta(dataRepo[0]);
+    	console.log(meta);
+        saveAsExcel({
+            sheets: [{
+                sheetName: 'Sheet',
+                content: dataRepo,
+                typeDefs: meta,
+                columns: [{width: 225}, {width: 250}]
+            }]
+        },new Date(Date.now()).toLocaleDateString('sv-se')+".xls")
+    }
+    function clearRecords(){
+    	localStorage.setItem("signal_data","")
+    	dataRepo = [];
+    	drawTable()
+    }
+    function  xmlHeader() {
+        return `<ss:Workbook xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">`;
+    };
+
+    //The XMLSS worksheet tag containing the worksheet name is created here,
+    //optionally adding column formatting if definition object is supplied.
+    function xmlWorksheetHeader(worksheetName, columns)  {
+        return `<ss:Worksheet ss:Name="${worksheetName}"><ss:Table>`
+            .concat(this.xmlBuildWorksheetHeaderColumnDefinition(columns || []))
+    };
+
+   function xmlBuildWorksheetHeaderColumnDefinition(columns) {
+        return columns
+            .map(column => column)
+            .reduce((columnString, columnObj) => {
+                return columnString.concat(`<ss:Column`)
+                    .concat(`${columnObj.hidden ? ` ss:Hidden="1"` : ``}`)
+                    .concat(`${columnObj.index ? ` ss:Index="${columnObj.index}"` : ``}`)
+                    .concat(`${columnObj.span ? ` ss:Span="${columnObj.span}"` : ``}`)
+                    .concat(`${columnObj.width ? ` ss:Width="${columnObj.width}"` : ``}`)
+                    .concat(` />`)
+            }, ``)
+    }
+
+    //Here we create the first row, which contains the name for each column.
+    function xmlTypesRow(properties) {
+        return properties
+            //For every type in the type list...
+            .map(property => property)
+
+            //...we add an entry to the header row section, reducing it down to a single string.
+            .reduce((row, typeDef) => {
+                return row.concat(`<ss:Cell><ss:Data ss:Type="String">${typeDef.displayName}</ss:Data></ss:Cell>\n`);
+
+                //The reduce method is initialized with the row tag here.
+            }, `<ss:Row>\n`)
+
+            //Lastly we add the closing row tag.
+            .concat(`</ss:Row>\n`);
+    };
+
+    //Here we add the data contained within each worksheet.
+    function xmlContent(data,typeDefs){
+        return data
+        //Each object in the data...
+            .map(obj => obj)
+
+            //...becomes a row in the final excel.
+            .reduce((rows, obj) => {
+
+                //We map out all the supplied properties and reduce it
+                //down to a list of cells containing the data.
+                return rows.concat(typeDefs
+                    .map(typeDef => typeDef)
+                    .reduce((row, typeDef) => {
+                        return row.concat(`<ss:Cell>\n<ss:Data ss:Type="${typeDef.type || 'String'}">${ isChild(obj, typeDef.propertyName) }</ss:Data>\n</ss:Cell>\n`)
+                    }, '<ss:Row>\n')
+                    //Row tag opening and closing done as in function "xmlTypesRow"
+                    .concat('</ss:Row>\n')
+                );
+            }, '')
+    };
+
+    //The worksheet footer marks the end of a worksheet.
+    function  xmlWorksheetFooter() {
+        return `\n</ss:Table>\n</ss:Worksheet>\n`;
+    };
+
+    //Closing workbook tag to finish the document.
+    function  xmlFooter()  {
+        return '</ss:Workbook>\n';
+    };
+    /* Method for getting the property value */
+    function  isChild(obj, val){
+        if (val.indexOf(".") != -1) {
+            let propertyVal = val.split(".");
+            propertyVal.forEach(function(entry) {
+                obj = obj[entry] || '';
+            });
+            return obj || ``;
+        } else {
+            return obj[val] || ``;
+        }
+    }
+	window.onload = init;
+</script>
+<body>
+	<style type="text/css">
+	.container{
+		width: 1200px;
+		height:450px;
+		margin: 50px auto 0 auto;
+	}
+	.container p{
+		font-size: 15px;
+		font-weight: bold;
+		text-align:center;
+		color:#00AAAA;
+	}
+	table tr td{
+		height:50px;
+	}
+	.left-header{
+		float:left;
+		width:450px;
+		margin-bottom:10px;
+		margin-left:20px;
+	}
+	.middle-header{
+		float:left;
+		width:320px;
+		margin-bottom:10px;
+		margin-left:20px;
+	}
+	.right-header{
+		float:left;
+		width:360px;
+		margin-bottom:10px;
+		margin-left:10px;
+	}
+	.left-container{
+		float:left;
+		width:450px;
+		height:450px;
+		margin-left:10px;
+		border: 1px solid #ccc;
+	}
+	.middle-container{
+		width:320px;
+		float:left;
+		margin-left:20px;
+		border: 1px solid #ccc;
+		height:450px;
+	}
+	.middle-container p{
+		font-size: 15px;
+		font-weight: bold;
+		text-align:center;
+		color:#00AAAA;
+	}
+	.right-container{
+		width:360px;
+		float:left;
+		margin-left:20px;
+		border: 1px solid #ccc;
+		height:450px;
+	}
+	#right-container{
+		width:100%;
+		height:420px;
+		overflow-y:auto;
+	}
+ 	#time:hover{
+		font-size:18px;
+	}
+	#scania-title{
+		position:relative;
+		animation-name: moving;
+		animation-duration: 5s;
+		animation-iteration-count: infinite;
+	}
+	@keyframes moving {
+    0%   {left:0px; top:0px;}
+    25%  {left:200px; top:0px;}
+    50%  {left:0px; }
+    60%  {right:200px;}
+    100% {right:0px; top:0px;}
+	}
+	.right-header img{
+		width:50px;
+		height:50px;
+		position:relative;
+		left:130px;
+	}
+	.right-container table{
+		width:100%;
+	}
+	table tr th{
+		background: #deefff; /* Old browsers */
+		background: -moz-linear-gradient(top, #deefff 0%, #98bede 100%); /* FF3.6-15 */
+		background: -webkit-linear-gradient(top, #deefff 0%,#98bede 100%); /* Chrome10-25,Safari5.1-6 */
+		background: linear-gradient(to bottom, #deefff 0%,#98bede 100%); /* W3C, IE10+, FF16+, Chrome26+, Opera12+, Safari7+ */
+		filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#deefff', endColorstr='#98bede',GradientType=0 ); /* IE6-9 */
+		font-weight: normal;
+		font-size: 15px;
+		font-family: Ariel;
+		height:40px;
+	}
+	.right-container table tr td, table tr th{
+		padding:5px;
+	}
+	.right-container table tr:nth-child(odd) td{
+		background: rgba(147,206,222,1);
+	}
+	.right-container table tr:nth-child(even) td{
+	}
+	table tr td{
+		font-size:12px;
+	}
+	.cell-red{
+		background: red !important;
+	}
+	.toolbar{
+		display:none;
+	}
+	.toolbar img{
+		cursor:pointer;
+	}
+	</style>
+	<div class="container">
+		<div class="left-header">
+		<p id="time"></p>
+		</div>
+		<div class="middle-header">
+		<p id="scania-title">Scania Smart Lab</p>
+		</div>
+		<div class="right-header">
+			<img src="images/logo.jpg">
+		</div>
+		<div style="clear:both"></div>
+		<div class="left-container">
+		<table cellpadding="5" cellspacing="10">
+		<tr>
+		<td>
+		<div><span>Controller Name</span></div>
+		</td>
+		<td><input type="text" name="cname" id="name" readonly="readonly"></td>
+		</tr>
+		<tr>
+		<td>
+		<div><span>Timestamp</span></div>
+		</td>
+		<td><input type="text" name="cname" id="timestamp" readonly="readonly"></td>
+		</tr>
+		<tr>
+		<td>
+		<div><span>Torque Upper Limit</span></div>
+		</td>
+		<td><input type="text" name="cname" id="torque_ulimit" readonly="readonly"></td>
+		</tr>
+		<tr>
+		<td>
+		<div><span>Torque Lower Limit</span></div>
+		</td>
+		<td><input type="text" name="cname" id="torque_llimit" readonly="readonly"></td>
+		</tr>
+		<tr>
+		<td>
+		<div><span>Torque Status</span></div>
+		</td>
+		<td><input type="text" name="cname" id="torque_status" readonly="readonly"></td>
+		</tr>
+		<tr>
+		<td>
+		<div><span>Tightning ID</span></div>
+		</td>
+		<td><input type="text" name="cname" id="tightning_id" readonly="readonly"></td>
+		</tr>
+		</table>
+		</div>
+		<div class="middle-container">
+			
+			<div style="text-align:center;margin-top:20px;">
+				<img src="" id="signal">
+			</div>
+			<div>
+				<p>Torque</p>
+				<div style="border:1px solid #ccc;width:200px;height:50px;text-align: center;margin:10px auto 0 auto;padding-top:10px;" id="torque">
+					
+				</div>
+			</div>
+			<div style="margin-top:50px;text-align:center;"><input type="button" value="Connect" onclick="sendMessage()"></div>
+		</div>
+		<div class="right-container">
+		<div class="toolbar"><img width=16 height=16 src="images/clear.png" onclick="clearRecords()">
+		&nbsp;&nbsp;<img src="images/excel.png" onclick="getExcel()"></div>
+		<div id="right-container">
+			
+		</div>
+		</div>
+
+	
+	</div>
+</body>
